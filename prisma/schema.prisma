@@ -1,8 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Prisma Schema - GestAuto / Eixo MVP
+// Especificação de Design: SDD-MVP.md
 
 generator client {
   provider = "prisma-client-js"
@@ -14,277 +11,209 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id              String   @id @default(uuid())
-  nome            String   @db.VarChar(255)
-  email           String   @unique @db.VarChar(255)
-  senha           String   @db.VarChar(255)
-  confirmar_email Boolean  @default(false)
-  ativo           Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  data_contrato   DateTime @default(now())
-
-  UsuarioEmpresa UsuarioEmpresa[]
-}
-
+// 🏢 EMPRESA (TENANT)
 model Empresa {
-  id             String           @id @default(uuid())
-  razao_social   String           @db.VarChar(255)
-  cnpj           String           @unique @db.VarChar(255)
-  email          String?          @unique @db.VarChar(255)
-  telefone       String?          @db.VarChar(20)
-  cep            String           @db.VarChar(255)
-  rua            String           @db.VarChar(255)
-  numero         String           @db.VarChar(20)
-  bairro         String           @db.VarChar(255)
-  cidade         String           @db.VarChar(255)
-  uf             String           @db.VarChar(10)
-  complemento    String?          @db.VarChar(255)
-  createdAt      DateTime         @default(now())
-  ativo          Boolean          @default(true)
-  status_empresa StatusEmpresa    @default(PENDENTE)
-  UsuarioEmpresa UsuarioEmpresa[]
-  Assinatura     Assinatura[]
-  Clientes       Clientes[]
-  OrdemServico   OrdemServico[]
-  PosVenda       PosVenda[]
-  Produtos       Produtos[]
-  Estoque        Estoque[]
-  Servico        Servico[]
+  id               String             @id @default(uuid())
+  nome_fantasia    String             @db.VarChar(255)
+  razao_social     String?            @db.VarChar(255)
+  cnpj             String             @unique @db.VarChar(20)
+  email            String             @unique @db.VarChar(255)
+  whatsapp         String             @db.VarChar(20)
+  chave_pix        String?            @db.VarChar(255)
+  ativo            Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  users            User[]
+  clientes         Clientes[]
+  carros           Carros[]
+  servicos         Servico[]
+  ordens_servico   OrdemServico[]
+  pos_vendas       PosVenda[]
+  templates        MensagemTemplate[]
 }
 
-enum StatusEmpresa {
-  PENDENTE
-  ATIVA
-  INATIVA
+// 👤 USUÁRIO (PROPRIETÁRIO / OPERADOR)
+model User {
+  id               String             @id @default(uuid())
+  nome             String             @db.VarChar(255)
+  email            String             @unique @db.VarChar(255)
+  senha            String             @db.VarChar(255)
+  empresa_id       String
+  ativo            Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  empresa          Empresa            @relation(fields: [empresa_id], references: [id], onDelete: Cascade)
+
+  @@index([empresa_id])
 }
 
-model UsuarioEmpresa {
-  id        String   @id @default(uuid())
-  userId    String
-  empresaId String
-  funcao    String?  @db.VarChar(50)
-  salario   Decimal? @db.Decimal(10, 2)
-  permisso  String?  @db.VarChar(50) // Exemplo: "admin", "user", etc.
-  createdAt DateTime @default(now())
-
-  user         User           @relation(fields: [userId], references: [id])
-  empresa      Empresa        @relation(fields: [empresaId], references: [id])
-  Clientes     Clientes[]
-  Carros       Carros[]
-  OrdemServico OrdemServico[]
-  OsServico    OsServico[]
-
-  @@unique([userId, empresaId])
-}
-
-model Plano {
-  id         String       @id @default(uuid())
-  nome       String       @db.VarChar(255)
-  valor      Decimal      @db.Decimal(10, 2)
-  ativo      Boolean      @default(true)
-  createdAt  DateTime     @default(now())
-  Assinatura Assinatura[]
-}
-
-model Assinatura {
-  id         String           @id @default(uuid())
-  empresaid  String
-  planoId    String
-  dataInicio DateTime         @default(now())
-  dataFim    DateTime?
-  status     StatusAssinatura @default(PENDENTE) // Exemplo: "ativa", "cancelada", etc.
-  createdAt  DateTime         @default(now())
-  gatewayId  String?          @db.VarChar(255) // ID do gateway de pagamento, se aplicável
-  empresa    Empresa          @relation(fields: [empresaid], references: [id])
-  plano      Plano            @relation(fields: [planoId], references: [id])
-  Fatura     Fatura[]
-}
-
-enum StatusAssinatura {
-  ATIVA
-  CANCELADA
-  PENDENTE
-}
-
-model Fatura {
-  id             String       @id @default(uuid())
-  assinaturaId   String
-  valor          Decimal      @db.Decimal(10, 2)
-  dataVencimento DateTime
-  status         StatusFatura @default(PENDENTE) // Exemplo: "paga", "pendente", etc.
-  createdAt      DateTime     @default(now())
-  transacaoId    String?      @db.VarChar(255)
-  assinatura     Assinatura   @relation(fields: [assinaturaId], references: [id])
-}
-
-enum StatusFatura {
-  PAGA
-  PENDENTE
-  ATRASADA
-}
-
+// 👥 CLIENTES
 model Clientes {
-  id             String   @id @default(uuid())
-  nome           String   @db.VarChar(255)
-  email          String?  @unique @db.VarChar(255)
-  telefone       String?  @db.VarChar(20)
-  empresa_id     String
-  funcionario_id String
-  ativo          Boolean  @default(true)
-  carros         Carros[]
-  createdAt      DateTime @default(now())
+  id               String             @id @default(uuid())
+  nome             String             @db.VarChar(255)
+  whatsapp         String?             @db.VarChar(20)
+  empresa_id       String
+  ativo            Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
-  empresa      Empresa        @relation(fields: [empresa_id], references: [id])
-  funcionario  UsuarioEmpresa @relation(fields: [funcionario_id], references: [id])
-  OrdemServico OrdemServico[]
-  PosVenda     PosVenda[]
+  empresa          Empresa            @relation(fields: [empresa_id], references: [id], onDelete: Cascade)
+  carros           Carros[]
+  ordens_servico   OrdemServico[]
+  pos_vendas       PosVenda[]
+
+  @@index([empresa_id, nome])
+  @@index([empresa_id, whatsapp])
 }
 
+// 🚗 CARROS
 model Carros {
-  id         String   @id @default(uuid())
-  cliente_id String
-  funcionario_id String
-  marca      String   @db.VarChar(255)
-  modelo     String   @db.VarChar(255)
-  ano        Int
-  placa      String   @unique @db.VarChar(20)
-  cor        String   @db.VarChar(50)
-  createdAt  DateTime @default(now())
+  id               String             @id @default(uuid())
+  placa            String             @db.VarChar(10)
+  marca            String             @db.VarChar(100)
+  modelo           String             @db.VarChar(100)
+  ano              Int
+  cor              String             @db.VarChar(50)
+  cliente_id       String
+  empresa_id       String
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
-  cliente      Clientes       @relation(fields: [cliente_id], references: [id])
-  funcionario  UsuarioEmpresa  @relation(fields: [funcionario_id], references: [id])
-  OrdemServico OrdemServico[]
+  cliente          Clientes           @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+  empresa          Empresa            @relation(fields: [empresa_id], references: [id], onDelete: Cascade)
+  ordens_servico   OrdemServico[]
+  pos_vendas       PosVenda[]
+
+  @@unique([empresa_id, placa])
+  @@index([empresa_id, placa])
 }
 
-model Produtos {
-  id         String   @id @default(uuid())
-  nome       String   @db.VarChar(255)
-  descricao  String?  @db.VarChar(500)
-  preco      Decimal  @db.Decimal(10, 2)
-  estoque_id String
-  empresa_id String
-  createdAt  DateTime @default(now())
+// 🛠️ CATÁLOGO DE SERVIÇOS
+model Servico {
+  id               String             @id @default(uuid())
+  nome             String             @db.VarChar(255)
+  descricao        String?            @db.VarChar(500)
+  preco_base       Decimal            @db.Decimal(10, 2)
+  duracao_minutos  Int                @default(60)
+  tempo_pos_venda  Int                @default(30) // Dias até o recall de pós-venda
+  ativo            Boolean            @default(true)
+  empresa_id       String
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
-  estoque Estoque @relation(fields: [estoque_id], references: [id])
-  empresa Empresa @relation(fields: [empresa_id], references: [id])
+  empresa          Empresa            @relation(fields: [empresa_id], references: [id], onDelete: Cascade)
+  itens_os         OrdemServicoItem[]
+  pos_vendas       PosVenda[]
 
-  ProdutoEstoque ProdutoEstoque[]
-  ItemVenda      ItemVenda[]
+  @@index([empresa_id, ativo])
 }
 
-model Estoque {
-  id             String           @id @default(uuid())
-  createdAt      DateTime         @default(now())
-  nome           String           @db.VarChar(255)
-  empresa_id     String
-  Produtos       Produtos[]
-  ProdutoEstoque ProdutoEstoque[]
-  empresa        Empresa          @relation(fields: [empresa_id], references: [id])
-}
-
-model ProdutoEstoque {
-  id         String   @id @default(uuid())
-  produtoId  String
-  estoqueId  String
-  quantidade Int      @default(0)
-  createdAt  DateTime @default(now())
-
-  produto Produtos @relation(fields: [produtoId], references: [id])
-  estoque Estoque  @relation(fields: [estoqueId], references: [id])
-  @@unique([produtoId, estoqueId])
-}
-
+// 📋 ORDEM DE SERVIÇO & AGENDAMENTO
 model OrdemServico {
   id               String             @id @default(uuid())
-  preco            Decimal            @db.Decimal(10, 2)
-  cliente_id       String
-  funcionario_id   String
-  carro_id         String
   empresa_id       String
-  metodo_pagamento String             @db.VarChar(50) // Exemplo: "cartão", "dinheiro", etc.
-  status           StatusOrdemServico @default(PENDENTE) // Exemplo: "con
-  desconto         Decimal            @default(0) @db.Decimal(10, 2)
-  hora_entrada     DateTime           @default(now())
-  hora_saida       DateTime?
-  preco_total      Decimal            @default(0) @db.Decimal(10, 2)
+  cliente_id       String
+  carro_id         String
+  status           StatusOrdemServico @default(AGENDADO)
+  data_agendamento DateTime?          // Para agendamentos futuros
+  hora_entrada     DateTime?          // Quando o carro entra fisicamente no pátio
+  previsao_entrega DateTime?          // Prazo combinado com o cliente
+  data_entrega     DateTime?          // Quando o carro é finalizado e entregue
+  valor_total      Decimal            @default(0) @db.Decimal(10, 2)
+  metodo_pagamento MetodoPagamento?   // Registrado na entrega
+  observacoes      String?            @db.Text
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
-  empresa     Empresa        @relation(fields: [empresa_id], references: [id])
-  cliente     Clientes       @relation(fields: [cliente_id], references: [id])
-  funcionario UsuarioEmpresa @relation(fields: [funcionario_id], references: [id])
-  carro       Carros         @relation(fields: [carro_id], references: [id])
-  OsServico   OsServico[]
-  ItemVenda   ItemVenda[]
-  Servico     Servico?       @relation(fields: [servicoId], references: [id])
-  servicoId   String?
-}
+  empresa          Empresa            @relation(fields: [empresa_id], references: [id], onDelete: Cascade)
+  cliente          Clientes           @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+  carro            Carros             @relation(fields: [carro_id], references: [id], onDelete: Cascade)
+  itens            OrdemServicoItem[]
+  pos_venda        PosVenda?
 
-model ItemVenda {
-  id               String   @id @default(uuid())
-  ordem_servico_id String
-  produto_id       String?
-  quantidade       Int      @default(1)
-  preco_unitario   Decimal  @db.Decimal(10, 2)
-  preco_total      Decimal  @db.Decimal(10, 2)
-  createdAt        DateTime @default(now())
-  servicoId        String?
-
-  ordemServico OrdemServico @relation(fields: [ordem_servico_id], references: [id])
-  produto      Produtos?     @relation(fields: [produto_id], references: [id])
-  servico      Servico?     @relation(fields: [servicoId], references: [id])
+  @@index([empresa_id, status])
+  @@index([empresa_id, data_agendamento])
+  @@index([empresa_id, data_entrega])
 }
 
 enum StatusOrdemServico {
-  PENDENTE
-  EM_ANDAMENTO
-  CONCLUIDA
-  CANCELADA
-  ATRASADA
+  AGENDADO             // Marcado para data futura
+  AGUARDANDO_INICIO    // No pátio aguardando início
+  EM_EXECUCAO          // Nos boxes sendo trabalhado
+  PRONTO_RETIRADA      // Finalizado, aguardando retirada
+  ENTREGUE             // Entregue e pago
+  CANCELADO            // Cancelado
 }
 
-model PosVenda {
-  id           String   @id @default(uuid())
-  servico_id   String
-  empresa_id   String
-  cliente_id   String
-  data_contato DateTime
-  status       String   @db.VarChar(50) // Exemplo: "pendente", "concluído", etc.
-
-  createdAt DateTime @default(now())
-  servico   Servico  @relation(fields: [servico_id], references: [id])
-  empresa   Empresa  @relation(fields: [empresa_id], references: [id])
-  cliente   Clientes @relation(fields: [cliente_id], references: [id])
+enum MetodoPagamento {
+  PIX
+  CARTAO_CREDITO
+  CARTAO_DEBITO
+  DINHEIRO
+  A_RECEBER
 }
 
-model Servico {
-  id              String    @id @default(uuid())
-  nome            String    @db.VarChar(255)
-  descricao       String?   @db.VarChar(500)
-  preco           Decimal   @db.Decimal(10, 2)
-  duracao         Int       // Duração em minutos
-  tempo_pos_venda Int?      // Tempo em dias para pós-venda
-  passoAPasso     String?   @db.Text // Passo a passo detalhado do serviço
-  empresa_id      String
-  ativo           Boolean   @default(true)
-  criadoEm        DateTime  @default(now())
-  atualizadoEm    DateTime  @updatedAt
-  deletadoEm      DateTime?
-
-  empresa      Empresa        @relation(fields: [empresa_id], references: [id])
-  OrdemServico OrdemServico[]
-  PosVenda     PosVenda[]
-  ItemVenda    ItemVenda[]
-
-  @@index([ativo])
-  @@index([deletadoEm])
-}
-
-model OsServico {
-  id               String @id @default(uuid())
-  funcionario_id   String
+// 🧾 ITENS DA ORDEM DE SERVIÇO
+model OrdemServicoItem {
+  id               String             @id @default(uuid())
   ordem_servico_id String
+  servico_id       String
+  preco_aplicado   Decimal            @db.Decimal(10, 2)
 
-  funcionario  UsuarioEmpresa @relation(fields: [funcionario_id], references: [id])
-  ordemServico OrdemServico   @relation(fields: [ordem_servico_id], references: [id])
-  createdAt    DateTime       @default(now())
+  ordem_servico    OrdemServico       @relation(fields: [ordem_servico_id], references: [id], onDelete: Cascade)
+  servico          Servico            @relation(fields: [servico_id], references: [id])
+
+  @@index([ordem_servico_id])
+}
+
+// 🎯 CENTRAL DE PÓS-VENDA
+model PosVenda {
+  id               String             @id @default(uuid())
+  empresa_id       String
+  cliente_id       String
+  carro_id         String
+  servico_id       String
+  ordem_servico_id String             @unique
+  data_contato     DateTime           // Data programada para o recall
+  status           StatusPosVenda     @default(PENDENTE)
+  observacoes      String?            @db.Text
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  empresa          Empresa            @relation(fields: [empresa_id], references: [id], onDelete: Cascade)
+  cliente          Clientes           @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+  carro            Carros             @relation(fields: [carro_id], references: [id], onDelete: Cascade)
+  servico          Servico            @relation(fields: [servico_id], references: [id], onDelete: Cascade)
+  ordem_servico    OrdemServico       @relation(fields: [ordem_servico_id], references: [id], onDelete: Cascade)
+
+  @@index([empresa_id, status, data_contato])
+}
+
+enum StatusPosVenda {
+  PENDENTE
+  CONTATADO
+  REAGENDADO
+  IGNORADO
+}
+
+// 💬 TEMPLATES DE MENSAGENS WHATSAPP
+model MensagemTemplate {
+  id               String             @id @default(uuid())
+  empresa_id       String
+  tipo             TipoTemplate
+  texto            String             @db.Text
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  empresa          Empresa            @relation(fields: [empresa_id], references: [id], onDelete: Cascade)
+
+  @@unique([empresa_id, tipo])
+}
+
+enum TipoTemplate {
+  CONFIRMACAO_AGENDAMENTO
+  CARRO_PRONTO
+  POS_VENDA_RECALL
 }
