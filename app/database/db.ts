@@ -18,4 +18,5 @@ const connectDB = async () => {
     });
 };
 
+export { prisma };
 export default connectDB;
