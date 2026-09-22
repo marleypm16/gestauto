@@ -1,30 +1,21 @@
-import Fastify, { fastify } from 'fastify'
-import jwtPlugin from './plugin/jwt'
-import authRoutes from './routes/auth.routes'
-import authenticatedRoutes from './routes/authenticated.routes'
-import emailRoutes from './routes/email.routes'
-import cors from './plugin/cors'
-import otpRoute from './routes/otp.routes'
-import cookiesPlugin from './plugin/cookies'
-const app = Fastify()
+import Fastify from 'fastify';
+import jwtPlugin from './plugin/jwt';
+import authRoutes from './routes/auth.routes';
+import authenticatedRoutes from './routes/authenticated.routes';
+import cors from './plugin/cors';
+import cookiesPlugin from './plugin/cookies';
 
+const app = Fastify({ logger: true });
 
-app.get('/', async (request, reply) => {
-  return { hello: 'world' }})
-// Em algum lugar no seu setup de rotas
+app.get('/health', async () => {
+  return { status: 'ok', timestamp: new Date().toISOString() };
+});
 
-app.register(cors)
-app.register(cookiesPlugin)
+app.register(cors);
+app.register(cookiesPlugin);
+app.register(jwtPlugin);
 
-app.register(jwtPlugin)
-app.register(emailRoutes)
-app.register(otpRoute)
-app.register(authRoutes)
-app.register(authenticatedRoutes)
+app.register(authRoutes);
+app.register(authenticatedRoutes);
 
-
-
-
-export default app
-
-
+export default app;
