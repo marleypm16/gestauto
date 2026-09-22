@@ -1,35 +1,27 @@
 import prisma from "../plugin/postgres";
 import bcrypt from "bcryptjs";
-export const findUserAuth = async (email:string,senha:string) => { 
-    const user = await prisma.user.findFirst({
-        where:{
-            email
-        },
-        include:{
-            UsuarioEmpresa:{
-                include:{
-                    empresa: true
-                }
-            }
-        }
-    })
-    .then((user) => {
-        if (!user) {
-            return null; 
-        }
 
-        const isPasswordValid = bcrypt.compareSync(senha, user.senha);
-        if (!isPasswordValid) {
-            return null
-        }
-
-        return user; 
-    })
-    .catch((error) => {
-        console.error('Erro ao buscar usuário:', error);
-        return null;
+export const findUserAuth = async (email: string, senha: string) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: {
+        empresa: true,
+      },
     });
-   
-    return user;
 
-}
+    if (!user || !user.ativo || !user.empresa.ativo) {
+      return null;
+    }
+
+    const isPasswordValid = await bcrypt.compare(senha, user.senha);
+    if (!isPasswordValid) {
+      return null;
+    }
+
+    return user;
+  } catch (error) {
+    console.error("Erro ao autenticar usuário:", error);
+    return null;
+  }
+};
