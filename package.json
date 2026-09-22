@@ -1,32 +1,29 @@
 {
   "name": "gestauto",
   "version": "1.0.0",
-  "description": "",
+  "description": "Sistema de Gestão para Estéticas Automotivas e Oficinas",
   "license": "ISC",
   "author": "",
   "type": "commonjs",
-  "main": "index.ts",
+  "main": "app/server.ts",
   "scripts": {
-    "dev": "nodemon app/server.ts",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsx ./app/plugin/postgres.ts",
-    "populate:estoque": "tsx prisma/populateEstoque.ts",
-    "clean:estoque": "tsx prisma/populateEstoque.ts --clean"
+    "dev": "tsx watch app/server.ts",
+    "build": "tsc",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:migrate": "prisma migrate dev"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22.0.1",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.15.18",
-    "nodemon": "^3.1.10",
     "prisma": "^6.16.1",
-    "ts-node": "^10.9.2",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "@aws-sdk/client-ses": "^3.812.0",
     "@fastify/cors": "^11.0.1",
     "@fastify/jwt": "^9.1.0",
-    "@fastify/redis": "^7.0.2",
     "@prisma/client": "^6.16.1",
     "bcryptjs": "^3.0.2",
     "dotenv": "^16.5.0",
@@ -34,7 +31,6 @@
     "fastify-cookie": "^5.6.1",
     "fastify-plugin": "^5.0.1",
     "fastify-type-provider-zod": "^4.0.2",
-    "redis": "^5.0.1",
     "zod": "^3.24.4"
   }
 }
