@@ -1,98 +1,94 @@
 import { FastifyReply, FastifyRequest } from "fastify";
-import criarCarroModel from "../models/criarCarro";
+import { criarCarroModel } from "../models/criarCarro";
 import { CarroService } from "../services/carroService";
-import { validateEmpresaAccess } from "../utils/pathEmpresaValidation";
+import { UserPayload } from "../interface/userPayload";
 
-export class CarroController{
-    static async createCarro(request: FastifyRequest, reply: FastifyReply) {
-        try {
-            const { clientId } = request.params as { clientId: string };
-            const { empresaId } = request.params as {  empresaId: string };
-            
-            
-                  ;
-                   const userId = (request.user as { id: string }).id;
-                  // Validar acesso à empresa
-                        if (!userId) {
-                            return reply.code(401).send({
-                                success: false,
-                                message: "Token de autenticação inválido"
-                            });
-                        }
-            
-                  
-                  const hasAccess = await validateEmpresaAccess(request, reply, empresaId);
-                  if (!hasAccess) return; // Resposta já foi enviada
-            const data = criarCarroModel.parse(request.body);
-            const novoCarro = await CarroService.createCarro(clientId,data);
-            return reply.status(201).send(novoCarro);
-        } catch (error) {
-            return reply.status(500).send(error);
-        }
+export class CarroController {
+  static async buscarPorPlaca(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const user = request.user as UserPayload;
+      const { placa } = request.params as { placa: string };
+
+      if (!placa) {
+        return reply.status(400).send({ success: false, message: "Placa é obrigatória" });
+      }
+
+      const carro = await CarroService.buscarPorPlaca(placa, user.empresaId);
+
+      if (!carro) {
+        return reply.status(404).send({
+          success: false,
+          message: "Veículo não encontrado",
+        });
+      }
+
+      return reply.status(200).send({
+        success: true,
+        data: carro,
+      });
+    } catch (error: any) {
+      return reply.status(500).send({
+        success: false,
+        message: error.message || "Erro ao buscar veículo por placa",
+      });
     }
+  }
 
+  static async createCarro(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const user = request.user as UserPayload;
+      const { clientId } = request.params as { clientId: string };
+      const data = criarCarroModel.parse(request.body);
 
-    static async updateCarro(request: FastifyRequest, reply: FastifyReply) {
-        try {
-            const { id, clientId, empresaId } = request.params as { id: string; clientId: string; empresaId: string };
-            const userId = (request.user as { id: string }).id;
-            const data = request.body;
-            
-            // Validar acesso à empresa
-            if (!userId) {
-                return reply.code(401).send({
-                    success: false,
-                    message: "Token de autenticação inválido"
-                });
-            }
-
-            const hasAccess = await validateEmpresaAccess(request, reply, empresaId);
-            if (!hasAccess) return;
-
-            const carroAtualizado = await CarroService.updateCarro(id, clientId, data);
-            
-            return reply.send({
-                success: true,
-                message: "Carro atualizado com sucesso",
-                data: carroAtualizado
-            });
-        } catch (error: any) {
-            return reply.status(400).send({
-                success: false,
-                message: error.message || "Erro ao atualizar carro"
-            });
-        }
+      const novoCarro = await CarroService.createCarro(clientId, user.empresaId, data);
+      return reply.status(201).send({
+        success: true,
+        message: "Veículo cadastrado com sucesso",
+        data: novoCarro,
+      });
+    } catch (error: any) {
+      return reply.status(400).send({
+        success: false,
+        message: error.message || "Erro ao cadastrar veículo",
+      });
     }
+  }
 
-    static async deleteCarro(request: FastifyRequest, reply: FastifyReply) {
-        try {
-            const { id, clientId, empresaId } = request.params as { id: string; clientId: string; empresaId: string };
-            const userId = (request.user as { id: string }).id;
-            
-            // Validar acesso à empresa
-            if (!userId) {
-                return reply.code(401).send({
-                    success: false,
-                    message: "Token de autenticação inválido"
-                });
-            }
+  static async updateCarro(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const user = request.user as UserPayload;
+      const { id } = request.params as { id: string };
+      const data = request.body as any;
 
-            const hasAccess = await validateEmpresaAccess(request, reply, empresaId);
-            if (!hasAccess) return;
-
-            await CarroService.deleteCarro(id, clientId);
-            
-            return reply.send({
-                success: true,
-                message: "Carro excluído com sucesso"
-            });
-        } catch (error: any) {
-            return reply.status(400).send({
-                success: false,
-                message: error.message || "Erro ao excluir carro"
-            });
-        }
+      const carroAtualizado = await CarroService.updateCarro(id, user.empresaId, data);
+      return reply.send({
+        success: true,
+        message: "Veículo atualizado com sucesso",
+        data: carroAtualizado,
+      });
+    } catch (error: any) {
+      return reply.status(400).send({
+        success: false,
+        message: error.message || "Erro ao atualizar veículo",
+      });
     }
+  }
 
+  static async deleteCarro(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const user = request.user as UserPayload;
+      const { id } = request.params as { id: string };
 
+      const resultado = await CarroService.deleteCarro(id, user.empresaId);
+      return reply.send({
+        success: true,
+        message: resultado.message,
+      });
+    } catch (error: any) {
+      return reply.status(400).send({
+        success: false,
+        message: error.message || "Erro ao excluir veículo",
+      });
+    }
+  }
 }

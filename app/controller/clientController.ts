@@ -2,140 +2,92 @@ import { FastifyReply, FastifyRequest } from "fastify";
 import { ClientService } from "../services/clientService";
 import { criarClienteModel } from "../models/criarCliente";
 import { getClientesQuerySchema } from "../models/buscarClientes";
-import { validateEmpresaAccess } from "../utils/pathEmpresaValidation";
+import { UserPayload } from "../interface/userPayload";
 
 export class ClientController {
-    
+  static async getClients(req: FastifyRequest, res: FastifyReply) {
+    try {
+      const user = req.user as UserPayload;
+      const params = getClientesQuerySchema.parse(req.query);
 
-    static async getClients(req: FastifyRequest, res: FastifyReply) {
-        try {
-            const { empresaId } = req.params as { empresaId: string };
-            const userId = (req.user as { id: string }).id;
-            
-            // Validar acesso à empresa
-            if (!userId) {
-                return res.code(401).send({
-                    success: false,
-                    message: "Token de autenticação inválido"
-                });
-            }
+      const clientes = await ClientService.getClients(user.empresaId, params);
 
-            const hasAccess = await validateEmpresaAccess(req, res, empresaId);
-            if (!hasAccess) return; // Resposta já foi enviada
-
-            // Processar query parameters
-            const params = getClientesQuerySchema.parse(req.query);
-            
-            const clientes = await ClientService.getClients(userId, empresaId, params);
-            
-            res.send({
-                success: true,
-                data: clientes
-            });
-        } catch (error: any) {
-            res.code(500).send({
-                success: false,
-                message: error.message || "Erro interno do servidor"
-            });
-        }
+      return res.status(200).send({
+        success: true,
+        ...clientes,
+      });
+    } catch (error: any) {
+      return res.status(500).send({
+        success: false,
+        message: error.message || "Erro ao listar clientes",
+      });
     }
+  }
 
-    static async getClientById(req: FastifyRequest, res: FastifyReply) {
-        try {
-            const { id, empresaId } = req.params as { id: string; empresaId: string };
-            const userId = (req.user as { id: string }).id;
-            
-            // Validar acesso à empresa
-            if (!userId) {
-                return res.code(401).send({
-                    success: false,
-                    message: "Token de autenticação inválido"
-                });
-            }
+  static async getClientById(req: FastifyRequest, res: FastifyReply) {
+    try {
+      const user = req.user as UserPayload;
+      const { id } = req.params as { id: string };
 
-            const hasAccess = await validateEmpresaAccess(req, res, empresaId);
-            if (!hasAccess) return; // Resposta já foi enviada
+      const client = await ClientService.getClientById(id, user.empresaId);
 
-            const client = await ClientService.getClientById(userId, id);
-            
-            res.send({
-                success: true,
-                data: client
-            });
-        } catch (error: any) {
-            res.code(500).send({
-                success: false,
-                message: error.message || "Erro interno do servidor"
-            });
-        }
+      if (!client) {
+        return res.status(404).send({
+          success: false,
+          message: "Cliente não encontrado",
+        });
+      }
+
+      return res.status(200).send({
+        success: true,
+        data: client,
+      });
+    } catch (error: any) {
+      return res.status(500).send({
+        success: false,
+        message: error.message || "Erro ao buscar detalhes do cliente",
+      });
     }
+  }
 
-    static async updateClient(req: FastifyRequest, res: FastifyReply) {
-        try {
-            const { id, empresaId } = req.params as { id: string; empresaId: string };
-            const userId = (req.user as { id: string }).id;
-            const data = req.body;
-            
-            // Validar acesso à empresa
-            if (!userId) {
-                return res.code(401).send({
-                    success: false,
-                    message: "Token de autenticação inválido"
-                });
-            }
+  static async createClient(req: FastifyRequest, res: FastifyReply) {
+    try {
+      const user = req.user as UserPayload;
+      const data = criarClienteModel.parse(req.body);
 
-            const hasAccess = await validateEmpresaAccess(req, res, empresaId);
-            if (!hasAccess) return; // Resposta já foi enviada
+      const newClient = await ClientService.createClient(user.empresaId, data);
 
-            const updatedClient = await ClientService.updateClient(id, data);
-            
-            res.send({
-                success: true,
-                message: "Cliente atualizado com sucesso",
-                data: updatedClient
-            });
-        } catch (error: any) {
-            res.code(500).send({
-                success: false,
-                message: error.message || "Erro interno do servidor"
-            });
-        }
+      return res.status(201).send({
+        success: true,
+        message: "Cliente cadastrado com sucesso",
+        data: newClient,
+      });
+    } catch (error: any) {
+      return res.status(400).send({
+        success: false,
+        message: error.message || "Erro ao cadastrar cliente",
+      });
     }
+  }
 
-    static async createClient(req: FastifyRequest, res: FastifyReply) {
-        try {
-            const { empresaId } = req.params as { empresaId: string };
-            const userId = (req.user as { id: string }).id; 
-            const data = criarClienteModel.parse(req.body);
-            
-            // Validar acesso à empresa
-            if (!userId) {
-                return res.code(401).send({
-                    success: false,
-                    message: "Token de autenticação inválido"
-                });
-            }
+  static async updateClient(req: FastifyRequest, res: FastifyReply) {
+    try {
+      const user = req.user as UserPayload;
+      const { id } = req.params as { id: string };
+      const data = req.body as any;
 
-            const hasAccess = await validateEmpresaAccess(req, res, empresaId);
-            if (!hasAccess) return; // Resposta já foi enviada
+      const updatedClient = await ClientService.updateClient(id, user.empresaId, data);
 
-            // Criar cliente associado à empresa
-            const newClient = await ClientService.createClient(userId, {
-                ...data,
-                empresa_id: empresaId
-            });
-            
-            res.status(201).send({
-                success: true,
-                message: "Cliente criado com sucesso",
-                data: newClient
-            });
-        } catch (error: any) {
-            res.code(400).send({
-                success: false,
-                message: error.message || "Erro ao criar cliente"
-            });
-        }
+      return res.status(200).send({
+        success: true,
+        message: "Cliente atualizado com sucesso",
+        data: updatedClient,
+      });
+    } catch (error: any) {
+      return res.status(400).send({
+        success: false,
+        message: error.message || "Erro ao atualizar cliente",
+      });
     }
-
+  }
 }
