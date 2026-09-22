@@ -1,134 +1,115 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import { loginModel } from "../models/loginModel";
-import { redisClient } from "../plugin/redis";
 import { findUserAuth } from "../utils/findUserAuth";
 import bcrypt from "bcryptjs";
-
 import { registroModel } from "../models/registroModel";
 import prisma from "../plugin/postgres";
 
 export class AuthController {
   static async login(request: FastifyRequest, reply: FastifyReply) {
-      const {email,senha} = loginModel.parse(request.body);
-      
+    try {
+      const { email, senha } = loginModel.parse(request.body);
       const user = await findUserAuth(email, senha);
-      
+
       if (!user) {
-        return reply.status(401).send({ message: 'E-mail ou senha inválidos' });
+        return reply.status(401).send({ message: "E-mail ou senha inválidos" });
       }
 
-      const sessionExists = await redisClient.get(`user:${user.id}`);
-      console.log('Sessão existente:', sessionExists);
-      if(sessionExists) {
-        await redisClient.del(`user:${user.id}`).catch((error) => {
-          console.error('Erro ao remover sessão do Redis:', error);
-          return reply.status(500).send({ message: 'Erro interno do servidor' });
-        });
-        
-      }
-
-      const token = request.server.jwt.sign({ 
-        id: user.id, 
+      const token = request.server.jwt.sign({
+        id: user.id,
         email: user.email,
         nome: user.nome,
+        empresaId: user.UsuarioEmpresa?.[0]?.empresaId || null,
       });
 
-
-      await redisClient.set(`user:${user.id}`, token, { EX: 3600 }).catch((error) => {
-        console.error('Erro ao armazenar sessão no Redis:', error);
-        return reply.status(500).send({ message: 'Erro interno do servidor' });
-      });
-
-      reply.setCookie('accessToken', token, {
-        path: '/',
+      reply.setCookie("accessToken", token, {
+        path: "/",
         httpOnly: true,
-        secure: false, 
-        sameSite: "lax", 
-        maxAge: 3600, 
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 7, // 7 dias
       });
-      // Retornar token para o cliente
-      return reply.status(200).send({ 
-        message: 'Login bem-sucedido',
+
+      return reply.status(200).send({
+        success: true,
+        message: "Login bem-sucedido",
         token,
         user: {
           id: user.id,
           email: user.email,
-          empresas: user.UsuarioEmpresa
-
-        }
+          nome: user.nome,
+          empresas: user.UsuarioEmpresa,
+        },
       });
+    } catch (error: any) {
+      return reply.status(400).send({
+        success: false,
+        message: error.message || "Erro ao realizar login",
+      });
+    }
   }
 
   static async logout(request: FastifyRequest, reply: FastifyReply) {
-      const token = request.cookies.accessToken || request.headers.authorization?.split(' ')[1];
-      if (!token) {
-        return reply.status(401).send({ message: 'Nenhum token fornecido' });
-      }
-    
-
-        await redisClient.set(`blacklist:${token}`, token,{EX: 120 }).then(()=>{
-          console.log('Sessão removida do Redis com sucesso');
-          return reply.status(200).send({ message: 'Logout bem-sucedido' });
-
-        }).catch((error) => {
-          console.error('Erro ao remover sessão do Redis:', error);}
-        )
-
-        reply.clearCookie('acessToken',{path:'/'});
-
-
-     
-    
+    reply.clearCookie("accessToken", { path: "/" });
+    return reply.status(200).send({ success: true, message: "Logout bem-sucedido" });
   }
 
   static async register(req: FastifyRequest, res: FastifyReply) {
-        const {user,company} = registroModel.parse(req.body);
-        const senhaCriptografada = await bcrypt.hash(user.senha, 12);
-        const existeusuarioComEmail = await prisma.user.findFirst({
-          where: {
-            email: user.email
-          }
-        })
-        if (existeusuarioComEmail) {
-            return res.status(400).send({ message: 'E-mail já cadastrado' });
-        }
-        const existeEmpresaComCnpj = await prisma.empresa.findFirst({
-          where:{
-            cnpj: company.cnpj
-          }
+    try {
+      const { user, company } = registroModel.parse(req.body);
+      const senhaCriptografada = await bcrypt.hash(user.senha, 12);
+
+      const existeUsuarioComEmail = await prisma.user.findFirst({
+        where: { email: user.email },
+      });
+      if (existeUsuarioComEmail) {
+        return res.status(400).send({ message: "E-mail já cadastrado" });
+      }
+
+      const existeEmpresaComCnpj = await prisma.empresa.findFirst({
+        where: { cnpj: company.cnpj },
+      });
+      if (existeEmpresaComCnpj) {
+        return res.status(400).send({ message: "CNPJ já cadastrado" });
+      }
+
+      const resultado = await prisma.$transaction(async (tx) => {
+        const empresaCriada = await tx.empresa.create({
+          data: company,
         });
-        
-        if (existeEmpresaComCnpj) {
-            return res.status(400).send({ message: 'CNPJ já cadastrado' });
-        }
-       const empresaCriada = await prisma.empresa.create({
-            data:company
-        })
-        if (!empresaCriada) {
-            return res.status(500).send({ message: 'Erro ao criar empresa' });
-        }
-        const usuarioCriado = await prisma.user.create({
-          data:{
+
+        const usuarioCriado = await tx.user.create({
+          data: {
             ...user,
-           senha : senhaCriptografada
-          }
-         
-        })
-        if (!usuarioCriado) {
-            return res.status(500).send({ message: 'Erro ao criar usuário' });
-        }
-        await prisma.usuarioEmpresa.create({
-          data:{
+            senha: senhaCriptografada,
+          },
+        });
+
+        const usuarioEmpresa = await tx.usuarioEmpresa.create({
+          data: {
             userId: usuarioCriado.id,
             empresaId: empresaCriada.id,
             funcao: "Proprietário",
             permisso: "admin",
-            
-          }
-       
-        })
-    
-       
-    
+          },
+        });
+
+        return { empresaCriada, usuarioCriado, usuarioEmpresa };
+      });
+
+      return res.status(201).send({
+        success: true,
+        message: "Empresa e usuário criados com sucesso",
+        data: {
+          userId: resultado.usuarioCriado.id,
+          empresaId: resultado.empresaCriada.id,
+        },
+      });
+    } catch (error: any) {
+      return res.status(400).send({
+        success: false,
+        message: error.message || "Erro ao registrar empresa e usuário",
+      });
+    }
   }
 }
