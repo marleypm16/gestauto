@@ -1,255 +1,187 @@
-import z from "zod";
 import { Prisma } from "../generated/prisma";
 import prisma from "../plugin/postgres";
-import { criarClienteModel } from "../models/criarCliente";
+import { CriarClienteInput } from "../models/criarCliente";
 
-type listarClientes = {
-    page: number;
-    pageSize: number;
-    sortBy: string;
-    sortOrder: 'asc' | 'desc';
-    // Campo unificado de busca que vai procurar em nome, modelo e placa
-    busca?: string;
-    // Mantendo os campos específicos caso ainda queira usá-los separadamente
-    nome?: string;
-    carro?: string;
-    placa?: string;
-    email?: string;
-    telefone?: string;
-    ativo?: boolean;
+export interface ListarClientesParams {
+  page?: number;
+  pageSize?: number;
+  busca?: string;
 }
 
 export class ClientService {
+  /**
+   * Lista clientes da empresa com busca inteligente e paginação
+   */
+  static async getClients(empresaId: string, params: ListarClientesParams) {
+    const page = Math.max(1, params.page || 1);
+    const pageSize = Math.min(100, Math.max(1, params.pageSize || 10));
+    const skip = (page - 1) * pageSize;
 
-    static async getClients(userid:string,empresa_id: string,params: listarClientes) {
-        console.log("params", params);
-        console.log("empresa_id", empresa_id);
-        console.log("userid", userid);
-        
-        const associarEmpresa = await prisma.usuarioEmpresa.findFirst({
-            where: {
-                userId: userid,
-                empresaId: empresa_id
-            }
-        })
-        
-        console.log("associarEmpresa", associarEmpresa);
-        if (!associarEmpresa) {
-            throw new Error("Usuário não tem permissão para criar cliente nesta empresa.");
-        }
-        
-        const { page, pageSize, sortBy, busca, nome, carro, placa, email, telefone, ativo, sortOrder } = params;
-        const skip = (page - 1) * pageSize;
-        const take = pageSize;
+    const where: Prisma.ClientesWhereInput = {
+      empresa_id: empresaId,
+      ativo: true,
+    };
 
-        // Construção do Filtro Dinâmico ('where')
-        const where: Prisma.ClientesWhereInput = {
-            empresa_id: empresa_id, // Filtra sempre pela empresa do usuário logado
-        };
+    if (params.busca && params.busca.trim()) {
+      const termo = params.busca.trim();
+      const termoPlaca = termo.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 
-        // Se há um termo de busca unificado, cria condição OR para buscar em múltiplos campos
-        if (busca) {
-            where.OR = [
-                // Busca no nome do cliente
-                {
-                    nome: {
-                        contains: busca,
-                        mode: 'insensitive'
-                    }
-                },
-                // Busca na placa do carro
-                {
-                    carros: {
-                        some: {
-                            placa: {
-                                contains: busca,
-                                mode: 'insensitive'
-                            }
-                        }
-                    }
-                },
-                // Busca no modelo do carro
-                {
-                    carros: {
-                        some: {
-                            modelo: {
-                                contains: busca,
-                                mode: 'insensitive'
-                            }
-                        }
-                    }
-                }
-            ];
-        } else {
-            // Mantém os filtros específicos caso não use a busca unificada
-            if (nome) {
-                where.nome = { contains: nome, mode: 'insensitive' };
-            }
-            if (placa) {
-                where.carros = {
-                    ...where.carros,
-                    some: {
-                        ...((where.carros as any)?.some || {}),
-                        placa: {
-                            contains: placa,
-                            mode: 'insensitive'
-                        }
-                    }
-                };
-            }
-            if (carro) {
-                where.carros = {
-                    ...where.carros,
-                    some: {
-                        ...((where.carros as any)?.some || {}),
-                        modelo: {
-                            contains: carro,
-                            mode: 'insensitive'
-                        }
-                    }
-                };
-            }
-        }
-
-        
-
-      let orderBy: any = {};
-        
-        // Ordenações especiais que requerem lógica customizada
-        if (sortBy === 'totalGasto' || sortBy === 'numeroAtendimentos') {
-            // Para estes casos, vamos ordenar após obter os dados
-            orderBy = { nome: sortOrder }; // Ordenação padrão temporária
-        } else {
-            orderBy = { [sortBy]: sortOrder };
-        }
-        
-        // Usando transação para buscar dados e contagem total
-        const [clientes, totalClientes, agregacaoGeral] = await prisma.$transaction([
-            prisma.clientes.findMany({
-                where,
-                orderBy,
-                skip,
-                take,
-                include: {
-                    carros: true,
-                    OrdemServico:{
-                        where:{
-                            status: "CONCLUIDA"
-                        },
-                        select:{
-                            preco_total:true
-                        }
-                    }
-                }
-            }),
-            prisma.clientes.count({ where }),
-            prisma.ordemServico.aggregate({
-                where: {
-                    status: "CONCLUIDA",
-                    cliente: where
-                },
-                _sum: {
-                    preco_total: true
-                }
-            })
-        ]);
-        
-        const totalGastoDecimal = agregacaoGeral._sum.preco_total;
-        const totalGastoNaEmpresa = totalGastoDecimal ? totalGastoDecimal.toNumber() : 0;
-
-        const clientesComTotalGasto = clientes.map(cliente => {
-            const totalGastoIndividual = cliente.OrdemServico.reduce(
-                (soma, os) => soma.add(os.preco_total),
-                new Prisma.Decimal(0)
-            );
-            const { OrdemServico, ...restoDoCliente } = cliente; 
-            return {
-                ...restoDoCliente,
-                totalGasto: totalGastoIndividual.toNumber(),
-            };
-        });
-
-        // Se a ordenação for por totalGasto ou numeroAtendimentos, aplicamos a ordenação aqui
-
-        let clientesOrdenados = clientesComTotalGasto
-
-        if (sortBy === 'totalGasto') {
-            clientesOrdenados = clientesComTotalGasto.sort((a, b) => {
-                return sortOrder === 'asc' 
-                    ? a.totalGasto - b.totalGasto 
-                    : b.totalGasto - a.totalGasto;
-            });
-        // } else if (sortBy === 'numeroAtendimentos') {
-        //     clientesOrdenados = clientesComTotalGasto.sort((a, b) => {
-        //         return sortOrder === 'asc' 
-        //             ? a.numeroAtendimentos - b.numeroAtendimentos 
-        //             : b.numeroAtendimentos - a.numeroAtendimentos;
-        //     });
-        // }
-        }
-
-        const totalPages = Math.ceil(totalClientes / pageSize);
-        return {
-            data: clientesOrdenados,
-            meta: {
-                totalItems: totalClientes,
-                currentPage: page,
-                pageSize,
-                totalPages,
-                totalGastoNaEmpresa
-            }
-        };
+      where.OR = [
+        { nome: { contains: termo, mode: "insensitive" } },
+        { whatsapp: { contains: termo, mode: "insensitive" } },
+        {
+          carros: {
+            some: {
+              OR: [
+                { placa: { contains: termoPlaca } },
+                { modelo: { contains: termo, mode: "insensitive" } },
+                { marca: { contains: termo, mode: "insensitive" } },
+              ],
+            },
+          },
+        },
+      ];
     }
 
-    static async getClientById(userid: string, clientId: string) {
-        const client = await prisma.clientes.findUnique({
-            where: { id: clientId },
-            include: {
-                carros: true,
-                empresa: true,
-                OrdemServico: true
-            }
-        });
+    const [clientes, totalItems] = await prisma.$transaction([
+      prisma.clientes.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { createdAt: "desc" },
+        include: {
+          carros: true,
+          ordens_servico: {
+            select: {
+              id: true,
+              valor_total: true,
+              status: true,
+              createdAt: true,
+            },
+          },
+        },
+      }),
+      prisma.clientes.count({ where }),
+    ]);
 
-        return client;
-    }
+    const data = clientes.map((cliente) => {
+      const totalGasto = cliente.ordens_servico
+        .filter((os) => os.status === "ENTREGUE")
+        .reduce((soma, os) => soma + Number(os.valor_total), 0);
 
-    static async updateClient(id: string, data: any) {
-        const updatedClient = await prisma.clientes.update({
-            where: { id },
-            data: data
-        });
+      const { ordens_servico, ...resto } = cliente;
+      return {
+        ...resto,
+        carros: cliente.carros,
+        totalAtendimentos: ordens_servico.length,
+        totalGasto,
+      };
+    });
 
-        return updatedClient;
-    }
+    return {
+      data,
+      meta: {
+        totalItems,
+        currentPage: page,
+        pageSize,
+        totalPages: Math.ceil(totalItems / pageSize),
+      },
+    };
+  }
 
-    static async createClient(userid: string, data: z.infer<typeof criarClienteModel>) {
-        const associarEmpresa = await prisma.usuarioEmpresa.findFirst({
-            where: {
-                userId: userid,
-                empresaId: data.empresa_id
-            }
-        })
-        if (!associarEmpresa) {
-            throw new Error("Usuário não tem permissão para criar cliente nesta empresa.");
-        }
-        
-        const { empresa_id, carros, ...clientData } = data;
-        const newClient = await prisma.clientes.create({
+  /**
+   * Busca um cliente por ID com histórico completo de ordens de serviço e veículos
+   */
+  static async getClientById(clientId: string, empresaId: string) {
+    const cliente = await prisma.clientes.findFirst({
+      where: {
+        id: clientId,
+        empresa_id: empresaId,
+      },
+      include: {
+        carros: true,
+        ordens_servico: {
+          orderBy: { createdAt: "desc" },
+          include: {
+            itens: {
+              include: {
+                servico: true,
+              },
+            },
+          },
+        },
+        pos_vendas: {
+          orderBy: { data_contato: "desc" },
+        },
+      },
+    });
+
+    return cliente;
+  }
+
+  /**
+   * Cria um cliente e opcionalmente seus carros vinculados
+   */
+  static async createClient(empresaId: string, data: CriarClienteInput) {
+    return prisma.$transaction(async (tx) => {
+      const novoCliente = await tx.clientes.create({
+        data: {
+          nome: data.nome,
+          whatsapp: data.whatsapp,
+          ativo: data.ativo ?? true,
+          empresa_id: empresaId,
+        },
+      });
+
+      if (data.carros && data.carros.length > 0) {
+        for (const carro of data.carros) {
+          const placaLimpa = carro.placa.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+
+          await tx.carros.create({
             data: {
-                ...clientData,
-                empresa: { 
-                    connect: { id: empresa_id }
-                },
-                funcionario: { 
-                    connect: { id: associarEmpresa.id }
-                },
-                carros:{
-                    create: carros
-                }
-            }
-        });
+              marca: carro.marca,
+              modelo: carro.modelo,
+              ano: carro.ano,
+              cor: carro.cor,
+              placa: placaLimpa,
+              cliente_id: novoCliente.id,
+              empresa_id: empresaId,
+            },
+          });
+        }
+      }
 
-        return newClient;
+      return tx.clientes.findUnique({
+        where: { id: novoCliente.id },
+        include: { carros: true },
+      });
+    });
+  }
+
+  /**
+   * Atualiza dados cadastrais do cliente
+   */
+  static async updateClient(id: string, empresaId: string, data: Partial<CriarClienteInput>) {
+    const clienteExistente = await prisma.clientes.findFirst({
+      where: { id, empresa_id: empresaId },
+    });
+
+    if (!clienteExistente) {
+      throw new Error("Cliente não encontrado nesta oficina.");
     }
+
+    const clienteAtualizado = await prisma.clientes.update({
+      where: { id },
+      data: {
+        nome: data.nome,
+        whatsapp: data.whatsapp,
+        ativo: data.ativo,
+      },
+      include: {
+        carros: true,
+      },
+    });
+
+    return clienteAtualizado;
+  }
 }
